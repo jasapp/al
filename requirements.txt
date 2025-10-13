@@ -1,0 +1,15 @@
+# Core dependencies
+python-telegram-bot==20.7
+anthropic==0.39.0
+python-dotenv==1.0.0
+
+# API integrations
+requests==2.31.0
+notion-client==2.2.1
+
+# Testing
+pytest==7.4.3
+pytest-cov==4.1.0
+
+# Type checking (optional but recommended)
+mypy==1.7.1

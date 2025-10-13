@@ -1,0 +1,47 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+ENV/
+env/
+*.egg-info/
+dist/
+build/
+
+# Environment
+.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Al's evolving memory (tracked in git)
+# AL_MEMORY.md stays tracked
+
+# Test coverage
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Runtime files
+.al.pid
+nohup.out
+
+# Notion secrets
+.notion_db_ids.txt
+NOTION_INTEGRATION_COMPLETE.md
+create_notion_databases.py

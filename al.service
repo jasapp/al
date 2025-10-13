@@ -1,0 +1,22 @@
+[Unit]
+Description=Al - Okluma Supply Chain Manager
+After=network.target
+
+[Service]
+Type=simple
+User=jasapp
+Group=jasapp
+WorkingDirectory=/home/jasapp/src/al
+Environment="PATH=/home/jasapp/src/al/venv/bin:/usr/local/bin:/usr/bin:/bin"
+ExecStart=/home/jasapp/src/al/venv/bin/python -m al.bot
+Restart=always
+RestartSec=10
+StandardOutput=append:/home/jasapp/src/al/logs/al.log
+StandardError=append:/home/jasapp/src/al/logs/al.log
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
