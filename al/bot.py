@@ -189,6 +189,24 @@ TOOLS = [
         }
     },
     {
+        "name": "calculate_date",
+        "description": "Calculate a future or past date by adding/subtracting days. Use this instead of trying to do date math in your head (avoids October 33rd mistakes).",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "start_date": {
+                    "type": "string",
+                    "description": "Starting date in YYYY-MM-DD format (e.g., '2025-10-14'), or leave empty to use today"
+                },
+                "days": {
+                    "type": "integer",
+                    "description": "Number of days to add (positive) or subtract (negative)"
+                }
+            },
+            "required": ["days"]
+        }
+    },
+    {
         "name": "calculate",
         "description": "Perform mathematical calculations using Python. ALWAYS use this for any arithmetic, don't try to do math in your head. Supports basic operations (+, -, *, /), exponents (**), and common functions (round, abs, min, max).",
         "input_schema": {
@@ -424,6 +442,22 @@ def execute_tool(tool_name: str, tool_input: Dict[str, Any]) -> str:
             now = datetime.now()
             return f"Current date and time: {now.strftime('%A, %B %d, %Y at %I:%M %p')}"
 
+        elif tool_name == "calculate_date":
+            from datetime import datetime, timedelta
+            days = tool_input["days"]
+            start_date = tool_input.get("start_date")
+
+            if start_date:
+                try:
+                    start = datetime.strptime(start_date, "%Y-%m-%d")
+                except ValueError:
+                    return f"Invalid date format. Use YYYY-MM-DD (e.g., '2025-10-14')"
+            else:
+                start = datetime.now()
+
+            result_date = start + timedelta(days=days)
+            return f"{start.strftime('%B %d, %Y')} + {days} days = {result_date.strftime('%A, %B %d, %Y')}"
+
         elif tool_name == "calculate":
             expression = tool_input["expression"]
             try:
@@ -611,6 +645,7 @@ You are Al. You have access to tools for checking orders, calculating production
 **IMPORTANT:**
 - ALWAYS use the 'calculate' tool for ANY arithmetic. Don't try to do math in your head - you'll get it wrong.
 - ALWAYS use the 'get_current_date' tool when you need to know what day it is. Don't guess!
+- ALWAYS use the 'calculate_date' tool for date math (adding/subtracting days). Don't manually figure out dates - you'll end up with October 33rd!
 
 Use tools when appropriate. Respond naturally based on your personality, current mood, and the conversation.
 """
