@@ -180,8 +180,31 @@ TOOLS = [
         }
     },
     {
+        "name": "calculate",
+        "description": "Perform mathematical calculations using Python. ALWAYS use this for any arithmetic, don't try to do math in your head. Supports basic operations (+, -, *, /), exponents (**), and common functions (round, abs, min, max).",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "expression": {
+                    "type": "string",
+                    "description": "Python expression to evaluate (e.g., '74 * 2', '407 / 11', 'round(122 / 7, 2)')"
+                }
+            },
+            "required": ["expression"]
+        }
+    },
+    {
+        "name": "list_vendors",
+        "description": "List all vendors in the database. Use this to see who you've worked with before.",
+        "input_schema": {
+            "type": "object",
+            "properties": {},
+            "required": []
+        }
+    },
+    {
         "name": "get_vendor_info",
-        "description": "Look up vendor information by name or search for vendors who supply a specific product.",
+        "description": "Look up detailed information about a specific vendor by name or search for vendors who supply a specific product.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -387,6 +410,22 @@ def execute_tool(tool_name: str, tool_input: Dict[str, Any]) -> str:
 
             return f"Logged. {entry.quantity}x {entry.product} scrapped - {entry.reason}"
 
+        elif tool_name == "calculate":
+            expression = tool_input["expression"]
+            try:
+                # Safe eval with limited builtins
+                allowed_names = {
+                    "abs": abs, "round": round, "min": min, "max": max,
+                    "sum": sum, "len": len, "int": int, "float": float
+                }
+                result = eval(expression, {"__builtins__": {}}, allowed_names)
+                return f"{expression} = {result}"
+            except Exception as e:
+                return f"Calculation error: {e}"
+
+        elif tool_name == "list_vendors":
+            return vendor_helper.format_vendor_list()
+
         elif tool_name == "get_vendor_info":
             vendor_name = tool_input.get("vendor_name")
             product = tool_input.get("product")
@@ -402,7 +441,7 @@ def execute_tool(tool_name: str, tool_input: Dict[str, Any]) -> str:
                     lines.append(f"- {v.name} (lead time: {v.lead_time_days} days)")
                 return "\n".join(lines)
             else:
-                return vendor_helper.format_vendor_list()
+                return "Please specify either vendor_name or product to search."
 
         elif tool_name == "add_vendor":
             vendor = vendor_helper.add_vendor(
@@ -553,7 +592,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 ---
 
-You are Al. You have access to tools for checking inventory, calculating production plans, logging scrap, and managing vendors.
+You are Al. You have access to tools for checking orders, calculating production plans, logging scrap, managing vendors, and doing math.
+
+**IMPORTANT: ALWAYS use the 'calculate' tool for ANY arithmetic.** Don't try to do math in your head - you'll get it wrong. Use the calculator for division, multiplication, percentages, everything.
 
 Use tools when appropriate. Respond naturally based on your personality, current mood, and the conversation.
 """
