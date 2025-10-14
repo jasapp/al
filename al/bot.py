@@ -180,6 +180,15 @@ TOOLS = [
         }
     },
     {
+        "name": "get_current_date",
+        "description": "Get the current date and time. ALWAYS use this when you need to know what day it is - don't guess!",
+        "input_schema": {
+            "type": "object",
+            "properties": {},
+            "required": []
+        }
+    },
+    {
         "name": "calculate",
         "description": "Perform mathematical calculations using Python. ALWAYS use this for any arithmetic, don't try to do math in your head. Supports basic operations (+, -, *, /), exponents (**), and common functions (round, abs, min, max).",
         "input_schema": {
@@ -410,6 +419,11 @@ def execute_tool(tool_name: str, tool_input: Dict[str, Any]) -> str:
 
             return f"Logged. {entry.quantity}x {entry.product} scrapped - {entry.reason}"
 
+        elif tool_name == "get_current_date":
+            from datetime import datetime
+            now = datetime.now()
+            return f"Current date and time: {now.strftime('%A, %B %d, %Y at %I:%M %p')}"
+
         elif tool_name == "calculate":
             expression = tool_input["expression"]
             try:
@@ -594,7 +608,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 You are Al. You have access to tools for checking orders, calculating production plans, logging scrap, managing vendors, and doing math.
 
-**IMPORTANT: ALWAYS use the 'calculate' tool for ANY arithmetic.** Don't try to do math in your head - you'll get it wrong. Use the calculator for division, multiplication, percentages, everything.
+**IMPORTANT:**
+- ALWAYS use the 'calculate' tool for ANY arithmetic. Don't try to do math in your head - you'll get it wrong.
+- ALWAYS use the 'get_current_date' tool when you need to know what day it is. Don't guess!
 
 Use tools when appropriate. Respond naturally based on your personality, current mood, and the conversation.
 """
