@@ -28,6 +28,7 @@ Thumbs.db
 # Logs
 *.log
 logs/
+logs.txt
 
 # Al's evolving memory (tracked in git)
 # AL_MEMORY.md stays tracked
@@ -40,6 +41,15 @@ htmlcov/
 # Runtime files
 .al.pid
 nohup.out
+
+# Al's local data files (managed in Notion, not in git)
+.al_conversation.json
+.al_invoices.json
+.al_vendors.json
+
+# Migration scripts (one-time use)
+migrate_al_data.py
+setup_al_workspace.py
 
 # Notion secrets
 .notion_db_ids.txt

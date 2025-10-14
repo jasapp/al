@@ -109,11 +109,21 @@ def add_to_conversation(role: str, content: str) -> None:
 # Tool definitions for Claude
 TOOLS = [
     {
-        "name": "check_inventory",
-        "description": "Check current inventory levels from ShipStation. Shows what's in stock, what's low, critical, or out of stock.",
+        "name": "check_orders",
+        "description": "Check recent orders from ShipStation. Shows pending orders, what needs to be shipped, and order details. Use this to see what orders need batteries, parts, or fulfillment.",
         "input_schema": {
             "type": "object",
-            "properties": {},
+            "properties": {
+                "status": {
+                    "type": "string",
+                    "description": "Order status to filter by: 'awaiting_shipment', 'shipped', 'cancelled', or leave empty for all active orders",
+                    "enum": ["awaiting_shipment", "shipped", "cancelled", "on_hold", ""]
+                },
+                "days": {
+                    "type": "integer",
+                    "description": "How many days back to look (default: 7)",
+                }
+            },
             "required": []
         }
     },
@@ -344,8 +354,11 @@ def execute_tool(tool_name: str, tool_input: Dict[str, Any]) -> str:
         Tool result as formatted string
     """
     try:
-        if tool_name == "check_inventory":
-            return get_inventory_summary()
+        if tool_name == "check_orders":
+            from al.helpers.shipstation_helper import get_orders_summary
+            status = tool_input.get("status", "awaiting_shipment")
+            days = tool_input.get("days", 7)
+            return get_orders_summary(status, days)
 
         elif tool_name == "calculate_production_plan":
             product = tool_input["product"]
@@ -560,8 +573,20 @@ Use tools when appropriate. Respond naturally based on your personality, current
 
         # Handle tool use
         while response.stop_reason == "tool_use":
-            # Extract tool calls and text
-            assistant_message = {"role": "assistant", "content": response.content}
+            # Extract tool calls and text - serialize blocks to dicts for JSON
+            serialized_content = []
+            for block in response.content:
+                if block.type == "text":
+                    serialized_content.append({"type": "text", "text": block.text})
+                elif block.type == "tool_use":
+                    serialized_content.append({
+                        "type": "tool_use",
+                        "id": block.id,
+                        "name": block.name,
+                        "input": block.input
+                    })
+
+            assistant_message = {"role": "assistant", "content": serialized_content}
             conversation_history.append(assistant_message)
 
             # Execute tools

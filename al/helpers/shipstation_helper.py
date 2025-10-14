@@ -9,8 +9,11 @@ Uses ShipStation V2 API for inventory management.
 
 import os
 import requests
+import logging
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -30,20 +33,30 @@ class ShipStationHelper:
     Handles authentication and provides clean methods for querying inventory.
     """
 
-    def __init__(self, api_key: Optional[str] = None):
+    def __init__(self, api_key: Optional[str] = None, api_secret: Optional[str] = None):
         """
         Initialize ShipStation helper.
 
         Args:
-            api_key: ShipStation V2 API key (defaults to SHIPSTATION_V2_API_KEY env var)
+            api_key: ShipStation V1 API key (defaults to SHIPSTATION_API_KEY env var)
+            api_secret: ShipStation V1 API secret (parsed from SHIPSTATION_API_KEY if not provided)
         """
-        self.api_key = api_key or os.getenv("SHIPSTATION_V2_API_KEY")
-        if not self.api_key:
-            raise ValueError("SHIPSTATION_V2_API_KEY not set")
+        # V1 API uses key:secret format
+        api_creds = api_key or os.getenv("SHIPSTATION_API_KEY")
+        if not api_creds:
+            raise ValueError("SHIPSTATION_API_KEY not set")
 
-        self.base_url = "https://api.shipstation.com/v2"
+        # Parse key:secret format
+        if ":" in api_creds:
+            self.api_key, self.api_secret = api_creds.split(":", 1)
+        else:
+            self.api_key = api_creds
+            self.api_secret = api_secret or ""
+
+        # V1 API uses Basic Auth, not Bearer token
+        self.base_url = "https://ssapi.shipstation.com"
+        self.auth = (self.api_key, self.api_secret)
         self.headers = {
-            "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
         }
 
@@ -63,9 +76,20 @@ class ShipStationHelper:
             requests.HTTPError: If request fails
         """
         url = f"{self.base_url}{endpoint}"
-        response = requests.request(method, url, headers=self.headers, **kwargs)
-        response.raise_for_status()
-        return response.json()
+        logger.info(f"ShipStation API request: {method} {url}")
+
+        try:
+            # Add Basic Auth to request
+            response = requests.request(method, url, headers=self.headers, auth=self.auth, **kwargs)
+            logger.info(f"ShipStation response: {response.status_code}")
+            response.raise_for_status()
+            return response.json()
+        except requests.HTTPError as e:
+            logger.error(f"ShipStation API error: {e.response.status_code} - {e.response.text}")
+            raise
+        except Exception as e:
+            logger.error(f"ShipStation request failed: {e}")
+            raise
 
     def get_all_inventory(self) -> List[InventoryItem]:
         """
@@ -78,23 +102,48 @@ class ShipStationHelper:
             requests.HTTPError: If API call fails
         """
         try:
-            data = self._request("GET", "/inventory")
+            # V1 API endpoint for products (which includes inventory)
+            data = self._request("GET", "/products")
+
+            logger.info(f"ShipStation response type: {type(data)}, data: {str(data)[:200]}")
 
             items = []
-            for item_data in data.get("items", []):
+
+            # Handle different response formats
+            if data is None:
+                logger.warning("ShipStation returned None")
+                return []
+
+            # V1 API returns products array at top level or in a "products" key
+            products = data if isinstance(data, list) else data.get("products", [])
+
+            logger.info(f"Found {len(products)} products")
+
+            for item_data in products:
+                # Handle warehouseLocation being None
+                warehouse_loc = item_data.get("warehouseLocation")
+                if warehouse_loc and isinstance(warehouse_loc, dict):
+                    quantity = warehouse_loc.get("quantity", 0)
+                    location_name = warehouse_loc.get("name")
+                else:
+                    quantity = 0
+                    location_name = None
+
                 items.append(InventoryItem(
                     sku=item_data.get("sku", ""),
                     name=item_data.get("name", ""),
-                    quantity=item_data.get("quantity", 0),
+                    quantity=quantity,
                     reorder_point=item_data.get("reorderPoint"),
-                    warehouse_location=item_data.get("warehouseLocation"),
+                    warehouse_location=location_name,
                 ))
 
             return items
 
         except requests.HTTPError as e:
-            # Log error but don't crash
-            print(f"ShipStation API error: {e}")
+            logger.error(f"Failed to get all inventory: {e}")
+            return []
+        except Exception as e:
+            logger.error(f"Unexpected error getting inventory: {e}", exc_info=True)
             return []
 
     def get_inventory_by_sku(self, sku: str) -> Optional[InventoryItem]:
@@ -108,20 +157,17 @@ class ShipStationHelper:
             InventoryItem or None if not found
         """
         try:
-            data = self._request("GET", f"/inventory/{sku}")
+            # V1 API doesn't have a direct SKU lookup, so we search all products
+            all_items = self.get_all_inventory()
+            for item in all_items:
+                if item.sku == sku:
+                    return item
 
-            return InventoryItem(
-                sku=data.get("sku", ""),
-                name=data.get("name", ""),
-                quantity=data.get("quantity", 0),
-                reorder_point=data.get("reorderPoint"),
-                warehouse_location=data.get("warehouseLocation"),
-            )
+            logger.info(f"SKU not found: {sku}")
+            return None
 
-        except requests.HTTPError as e:
-            if e.response.status_code == 404:
-                return None
-            print(f"ShipStation API error: {e}")
+        except Exception as e:
+            logger.error(f"Unexpected error getting SKU {sku}: {e}")
             return None
 
     def get_low_stock_items(self, threshold: Optional[int] = None) -> List[InventoryItem]:
@@ -233,6 +279,7 @@ def get_inventory_summary() -> str:
         helper = ShipStationHelper()
         return helper.format_inventory_summary()
     except Exception as e:
+        logger.error(f"Error fetching inventory summary: {e}")
         return f"Error fetching inventory: {e}"
 
 
@@ -247,5 +294,80 @@ def get_low_stock() -> List[InventoryItem]:
         helper = ShipStationHelper()
         return helper.get_low_stock_items()
     except Exception as e:
-        print(f"Error fetching low stock: {e}")
+        logger.error(f"Error fetching low stock: {e}")
         return []
+
+
+def get_orders_summary(status: str = "awaiting_shipment", days: int = 7) -> str:
+    """
+    Get summary of orders from ShipStation.
+
+    Args:
+        status: Order status filter (awaiting_shipment, shipped, etc.)
+        days: How many days back to look
+
+    Returns:
+        Formatted orders summary
+    """
+    try:
+        from datetime import datetime, timedelta
+
+        helper = ShipStationHelper()
+
+        # Calculate date range
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=days)
+
+        # Format for ShipStation API (ISO 8601)
+        params = {
+            "orderStatus": status,
+            "createDateStart": start_date.strftime("%Y-%m-%dT%H:%M:%S"),
+            "createDateEnd": end_date.strftime("%Y-%m-%dT%H:%M:%S"),
+            "pageSize": 500,  # Get up to 500 orders per page
+            "page": 1
+        }
+
+        logger.info(f"Fetching orders with params: {params}")
+
+        data = helper._request("GET", "/orders", params=params)
+
+        orders = data.get("orders", [])
+        total = data.get("total", len(orders))
+        logger.info(f"Found {len(orders)} orders (total: {total})")
+
+        if not orders:
+            return f"No {status} orders found in the last {days} days."
+
+        lines = [f"**{status.replace('_', ' ').title()} Orders (last {days} days):**\n"]
+
+        # Show all orders, not just first 20
+        for order in orders:
+            order_num = order.get("orderNumber", "Unknown")
+            order_date = order.get("orderDate", "")[:10]  # Just date part
+            customer = order.get("shipTo", {}).get("name", "Unknown")
+            order_total = order.get("orderTotal", 0)
+
+            # Get items
+            items = order.get("items", [])
+            item_summary = []
+            for item in items[:3]:  # Show first 3 items
+                qty = item.get("quantity", 0)
+                name = item.get("name", "Unknown")
+                item_summary.append(f"{qty}x {name}")
+
+            items_text = ", ".join(item_summary)
+            if len(items) > 3:
+                items_text += f" (+{len(items)-3} more)"
+
+            lines.append(f"**#{order_num}** - {customer} - ${order_total:.2f}")
+            lines.append(f"  Date: {order_date}")
+            lines.append(f"  Items: {items_text}")
+            lines.append("")
+
+        lines.append(f"**Total: {total} orders**")
+
+        return "\n".join(lines)
+
+    except Exception as e:
+        logger.error(f"Error fetching orders: {e}", exc_info=True)
+        return f"Error fetching orders: {e}"
