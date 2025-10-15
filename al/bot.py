@@ -654,11 +654,39 @@ Use tools when appropriate. Respond naturally based on your personality, current
     add_to_conversation("user", user_message)
 
     try:
-        # Call Claude with tools
+        # Call Claude with tools and prompt caching
+        # Structure system prompt for caching: personality (static) + memory (changes)
+        system_blocks = [
+            {
+                "type": "text",
+                "text": al_personality,
+                "cache_control": {"type": "ephemeral"}  # Cache personality (rarely changes)
+            },
+            {
+                "type": "text",
+                "text": f"""## Current Memory and Context
+
+{al_memory}
+
+{mood_context}
+
+---
+
+You are Al. You have access to tools for checking orders, calculating production plans, logging scrap, managing vendors, and doing math.
+
+**IMPORTANT:**
+- ALWAYS use the 'calculate' tool for ANY arithmetic. Don't try to do math in your head - you'll get it wrong.
+- ALWAYS use the 'get_current_date' tool when you need to know what day it is. Don't guess!
+- ALWAYS use the 'calculate_date' tool for date math (adding/subtracting days). Don't manually figure out dates - you'll end up with October 33rd!
+
+Use tools when appropriate. Respond naturally based on your personality, current mood, and the conversation."""
+            }
+        ]
+
         response = anthropic_client.messages.create(
             model=CLAUDE_MODEL,
             max_tokens=4000,
-            system=system_prompt,
+            system=system_blocks,
             messages=conversation_history,
             tools=TOOLS,
         )
@@ -703,7 +731,7 @@ Use tools when appropriate. Respond naturally based on your personality, current
             response = anthropic_client.messages.create(
                 model=CLAUDE_MODEL,
                 max_tokens=4000,
-                system=system_prompt,
+                system=system_blocks,
                 messages=conversation_history,
                 tools=TOOLS,
             )
