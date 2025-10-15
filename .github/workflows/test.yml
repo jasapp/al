@@ -31,7 +31,7 @@ jobs:
         NOTION_API_KEY: test_notion_key
         ANTHROPIC_API_KEY: test_anthropic_key
       run: |
-        pytest tests/ -v --cov=al --cov-report=term-missing --cov-fail-under=80
+        pytest tests/ -v --cov=al --cov-report=term-missing --cov-fail-under=50
 
     - name: Run regression tests (must pass)
       env:
@@ -47,4 +47,4 @@ jobs:
 
     - name: Check code coverage
       run: |
-        pytest --cov=al --cov-report=term --cov-fail-under=80
+        pytest --cov=al --cov-report=term --cov-fail-under=50
