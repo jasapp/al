@@ -104,13 +104,15 @@ def test_get_media_type():
 
 def test_parse_invoice_from_bytes_success(mock_claude_response):
     """Test parsing invoice from bytes with successful response."""
+    import json
     with patch.dict('os.environ', {'ANTHROPIC_API_KEY': 'test_key'}):
         parser = InvoiceParser()
 
         # Mock the Claude API response
         mock_response = Mock()
         mock_response.content = [Mock()]
-        mock_response.content[0].text = f'```json\n{str(mock_claude_response).replace("'", '"')}\n```'
+        json_str = json.dumps(mock_claude_response)
+        mock_response.content[0].text = f'```json\n{json_str}\n```'
 
         with patch.object(parser.client.messages, 'create', return_value=mock_response):
             invoice = parser.parse_invoice_from_bytes(b'fake_image_data', 'image/jpeg')
