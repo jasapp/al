@@ -6,6 +6,7 @@ python-dotenv==1.0.0
 # API integrations
 requests==2.31.0
 notion-client==2.2.1
+python-Levenshtein==0.23.0
 
 # Testing
 pytest==7.4.3

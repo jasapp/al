@@ -28,6 +28,7 @@ from al.helpers.mood_manager import MoodManager
 from al.helpers.shipstation_helper import ShipStationHelper, get_inventory_summary
 from al.helpers.production_helper import calculate_bom, format_production_plan, get_product_list, get_product_bom
 from al.helpers.vendor_helper import VendorHelper
+from al.helpers.vendor_safe import get_safe_vendor_ops
 from al.helpers.scrap_tracker import ScrapTracker
 from al.helpers.invoice_parser import InvoiceParser
 from al.helpers.invoice_tracker import InvoiceTracker
@@ -248,7 +249,7 @@ TOOLS = [
     },
     {
         "name": "add_vendor",
-        "description": "Add or update vendor information.",
+        "description": "Add vendor information. ALWAYS use this - it checks for duplicates and requires your confirmation before saving.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -264,6 +265,10 @@ TOOLS = [
                     "type": "string",
                     "description": "Email address (optional)"
                 },
+                "phone": {
+                    "type": "string",
+                    "description": "Phone number (optional)"
+                },
                 "products": {
                     "type": "array",
                     "items": {"type": "string"},
@@ -272,9 +277,75 @@ TOOLS = [
                 "lead_time_days": {
                     "type": "integer",
                     "description": "Typical lead time in days (optional)"
+                },
+                "notes": {
+                    "type": "string",
+                    "description": "Additional notes (optional)"
                 }
             },
             "required": ["name"]
+        }
+    },
+    {
+        "name": "update_vendor",
+        "description": "Update existing vendor information. Shows before/after and requires confirmation.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "Vendor name to update"
+                },
+                "contact_name": {
+                    "type": "string",
+                    "description": "New contact person name (optional)"
+                },
+                "email": {
+                    "type": "string",
+                    "description": "New email address (optional)"
+                },
+                "phone": {
+                    "type": "string",
+                    "description": "New phone number (optional)"
+                },
+                "products": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Updated list of products (optional)"
+                },
+                "lead_time_days": {
+                    "type": "integer",
+                    "description": "New lead time in days (optional)"
+                },
+                "notes": {
+                    "type": "string",
+                    "description": "Updated notes (optional)"
+                }
+            },
+            "required": ["name"]
+        }
+    },
+    {
+        "name": "confirm_operation",
+        "description": "Confirm a pending database operation after reviewing duplicates or changes. MUST be used when add_vendor or update_vendor returns 'duplicate_found' or 'confirmation_required'.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "operation_id": {
+                    "type": "string",
+                    "description": "The operation ID from the pending operation"
+                },
+                "choice": {
+                    "type": "string",
+                    "description": "What to do: 'create_new' (proceed anyway), 'update_existing' (update duplicate instead), 'cancel' (don't do it), 'confirm' (for updates)",
+                    "enum": ["create_new", "update_existing", "cancel", "confirm"]
+                },
+                "update_record_id": {
+                    "type": "string",
+                    "description": "If choice is 'update_existing', the ID/name of the record to update"
+                }
+            },
+            "required": ["operation_id", "choice"]
         }
     },
     {
@@ -492,14 +563,39 @@ def execute_tool(tool_name: str, tool_input: Dict[str, Any]) -> str:
                 return "Please specify either vendor_name or product to search."
 
         elif tool_name == "add_vendor":
-            vendor = vendor_helper.add_vendor(
+            safe_ops = get_safe_vendor_ops()
+            result = safe_ops.add_vendor_safe(
                 name=tool_input["name"],
                 contact_name=tool_input.get("contact_name"),
                 email=tool_input.get("email"),
+                phone=tool_input.get("phone"),
                 products=tool_input.get("products"),
-                lead_time_days=tool_input.get("lead_time_days")
+                lead_time_days=tool_input.get("lead_time_days"),
+                notes=tool_input.get("notes")
             )
-            return f"Vendor added: {vendor.name}"
+            return json.dumps(result, indent=2)
+
+        elif tool_name == "update_vendor":
+            safe_ops = get_safe_vendor_ops()
+            result = safe_ops.update_vendor_safe(
+                name=tool_input["name"],
+                contact_name=tool_input.get("contact_name"),
+                email=tool_input.get("email"),
+                phone=tool_input.get("phone"),
+                products=tool_input.get("products"),
+                lead_time_days=tool_input.get("lead_time_days"),
+                notes=tool_input.get("notes")
+            )
+            return json.dumps(result, indent=2)
+
+        elif tool_name == "confirm_operation":
+            safe_ops = get_safe_vendor_ops()
+            result = safe_ops.confirm_operation(
+                operation_id=tool_input["operation_id"],
+                choice=tool_input["choice"],
+                update_record_id=tool_input.get("update_record_id")
+            )
+            return json.dumps(result, indent=2)
 
         elif tool_name == "get_scrap_summary":
             days = tool_input.get("days", 7)
@@ -642,12 +738,48 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 You are Al. You have access to tools for checking orders, calculating production plans, logging scrap, managing vendors, and doing math.
 
-**IMPORTANT:**
+**IMPORTANT RULES:**
 - ALWAYS use the 'calculate' tool for ANY arithmetic. Don't try to do math in your head - you'll get it wrong.
 - ALWAYS use the 'get_current_date' tool when you need to know what day it is. Don't guess!
 - ALWAYS use the 'calculate_date' tool for date math (adding/subtracting days). Don't manually figure out dates - you'll end up with October 33rd!
 
-Use tools when appropriate. Respond naturally based on your personality, current mood, and the conversation.
+**CRITICAL DATA SAFETY RULES:**
+You are METHODICAL and CAREFUL with inventory data. Your job requires precision.
+
+1. **When adding/updating vendors:**
+   - The tools automatically check for duplicates
+   - If you get back "duplicate_found" or "confirmation_required", STOP
+   - Show Jeff what was found (name, email, similarity score)
+   - Explain why they might be duplicates
+   - Give clear options: "create new anyway" / "update existing" / "cancel"
+   - WAIT for his decision - use confirm_operation tool with his choice
+
+2. **After EVERY database write:**
+   - Check the verification result in the response
+   - If "verification": {"passed": true} - good, tell Jeff it worked
+   - If "verification": {"passed": false} - IMMEDIATELY tell Jeff: "⚠️ Data verification failed"
+   - Show what you tried to save vs what's actually in Notion
+   - Don't proceed with related operations until this is fixed
+
+3. **NEVER assume or guess:**
+   - If tool says "duplicate_found", don't create anyway without asking
+   - If verification fails, don't ignore it
+   - If you're unsure, ASK Jeff
+
+4. **All your actions are logged:**
+   - Everything you do with vendor data is in the audit log
+   - Be accurate and honest
+   - If you make a mistake, own it
+
+**Example duplicate handling:**
+Jeff: "Add vendor Kesu Group, email joanna@kesugroup.com"
+Tool returns: {"status": "duplicate_found", "duplicates": [{"name": "KESU", "email": "old@kesu.com"}]}
+You: "I found an existing vendor 'KESU' with email old@kesu.com. This might be the same company. Should I:
+1. Create new vendor 'Kesu Group' (separate entry)
+2. Update the existing 'KESU' record with the new email
+3. Cancel (this was a mistake)"
+
+Use tools when appropriate. Respond naturally based on your personality, current mood, and the conversation - but be EXTRA careful with data.
 """
 
     # Add user message to history
@@ -674,12 +806,48 @@ Use tools when appropriate. Respond naturally based on your personality, current
 
 You are Al. You have access to tools for checking orders, calculating production plans, logging scrap, managing vendors, and doing math.
 
-**IMPORTANT:**
+**IMPORTANT RULES:**
 - ALWAYS use the 'calculate' tool for ANY arithmetic. Don't try to do math in your head - you'll get it wrong.
 - ALWAYS use the 'get_current_date' tool when you need to know what day it is. Don't guess!
 - ALWAYS use the 'calculate_date' tool for date math (adding/subtracting days). Don't manually figure out dates - you'll end up with October 33rd!
 
-Use tools when appropriate. Respond naturally based on your personality, current mood, and the conversation."""
+**CRITICAL DATA SAFETY RULES:**
+You are METHODICAL and CAREFUL with inventory data. Your job requires precision.
+
+1. **When adding/updating vendors:**
+   - The tools automatically check for duplicates
+   - If you get back "duplicate_found" or "confirmation_required", STOP
+   - Show Jeff what was found (name, email, similarity score)
+   - Explain why they might be duplicates
+   - Give clear options: "create new anyway" / "update existing" / "cancel"
+   - WAIT for his decision - use confirm_operation tool with his choice
+
+2. **After EVERY database write:**
+   - Check the verification result in the response
+   - If "verification": {"passed": true} - good, tell Jeff it worked
+   - If "verification": {"passed": false} - IMMEDIATELY tell Jeff: "⚠️ Data verification failed"
+   - Show what you tried to save vs what's actually in Notion
+   - Don't proceed with related operations until this is fixed
+
+3. **NEVER assume or guess:**
+   - If tool says "duplicate_found", don't create anyway without asking
+   - If verification fails, don't ignore it
+   - If you're unsure, ASK Jeff
+
+4. **All your actions are logged:**
+   - Everything you do with vendor data is in the audit log
+   - Be accurate and honest
+   - If you make a mistake, own it
+
+**Example duplicate handling:**
+Jeff: "Add vendor Kesu Group, email joanna@kesugroup.com"
+Tool returns: {"status": "duplicate_found", "duplicates": [{"name": "KESU", "email": "old@kesu.com"}]}
+You: "I found an existing vendor 'KESU' with email old@kesu.com. This might be the same company. Should I:
+1. Create new vendor 'Kesu Group' (separate entry)
+2. Update the existing 'KESU' record with the new email
+3. Cancel (this was a mistake)"
+
+Use tools when appropriate. Respond naturally based on your personality, current mood, and the conversation - but be EXTRA careful with data."""
             }
         ]
 
